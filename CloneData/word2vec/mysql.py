@@ -82,8 +82,8 @@ def insertMySQL_content(data_list):
 
     # 🔹 Câu lệnh SQL INSERT
     insert_sql = text("""
-        INSERT INTO uet_content (id_url, paragraph, last_modified) 
-        VALUES (:id_url, :paragraph, :last_modified) 
+        INSERT INTO uet_content (id_url, paragraph, type, last_modified) 
+        VALUES (:id_url, :paragraph, :type, :last_modified) 
     """)
 
     # 🔹 Câu lệnh SQL để tìm id của `id_parents`
@@ -104,6 +104,7 @@ def insertMySQL_content(data_list):
             connection.execute(insert_sql, {
                 "id_url": id_url,
                 "paragraph": data["paragraph"],
+                "type": data["type"],
                 "last_modified": datetime.strptime(data["last_modified"], "%Y-%m-%d %H:%M:%S.%f")
             })
         
