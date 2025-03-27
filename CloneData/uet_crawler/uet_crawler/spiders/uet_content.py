@@ -49,8 +49,6 @@ class ContentSpider(scrapy.Spider):
         save_dir = r"E:\Code\Master\BDT\CloneFile"  # Thư mục lưu file
 
         if 'text/html' in content_type:
-            print(f"✅ Đang xử lý HTML: {page_url}")
-
             # Sử dụng BeautifulSoup để phân tích HTML
             soup = BeautifulSoup(response.text, "html.parser")
 
@@ -65,11 +63,9 @@ class ContentSpider(scrapy.Spider):
             self.updateContent(page_url, cleaned_html, "url")
             self.updateUrl(page_url)
 
-            print(f"✅ Đã lấy nội dung từ {page_url} (Không có JS & CSS)")
+            # print(f"✅ Đã lấy nội dung từ {page_url} (Không có JS & CSS)")
 
         else:
-            print(f"📂 Lưu file từ {page_url} (Loại: {content_type})")
-
             # Chuyển đổi URL thành tên file hợp lệ
             safe_filename = re.sub(r'[<>:"/\\|?*]', '_', page_url)  
 
@@ -98,7 +94,7 @@ class ContentSpider(scrapy.Spider):
             self.updateContent(page_url, filepath, "file")
             self.updateUrl(page_url)
 
-            print(f"✅ File đã lưu: {filepath}")
+            # print(f"📂 File đã lưu: {filepath}")
 
     def closed(self, reason):
         """Đóng kết nối SQLite sau khi thu thập dữ liệu xong."""

@@ -13,6 +13,7 @@ class UETSpider(scrapy.Spider):
     def __init__(self, *args, **kwargs):
         super(UETSpider, self).__init__(*args, **kwargs)
         self.create_db()
+        self.pending_children = {}  # Lưu số lượng link con chưa hoàn thành
 
     def create_db(self):
         """Tạo database để lưu trạng thái URL đã duyệt."""
@@ -63,8 +64,13 @@ class UETSpider(scrapy.Spider):
         """Duyệt qua các link trên trang và thu thập dữ liệu."""
         depth = response.meta.get("depth", 0)  # Lấy độ sâu hiện tại, mặc định là 0
         parents = response.meta.get("parents", "")  # Lấy độ sâu hiện tại, mặc định là 0
+        lastUrl = response.meta.get("lastUrl", False)  # Lấy độ sâu hiện tại, mặc định là 0
+
         self.mark_visited(response.url, depth, datetime.datetime.now(),parents)  # Đánh dấu URL đã thu thập
-        print(f"✅ Đã lấy url {response.url}")
+        if lastUrl:
+            self.mark_crawled(parents, depth, datetime.datetime.now())
+
+        # print(f"✅ Đã lấy url {response.url}")
         if depth >= self.max_depth:
             self.mark_crawled(response.url, depth, datetime.datetime.now())  # Đánh dấu hoàn tất nếu đạt độ sâu tối đa
             return
@@ -72,16 +78,16 @@ class UETSpider(scrapy.Spider):
         content_type = response.headers.get('Content-Type', b'').decode()
         if 'text/html' not in content_type:
             self.mark_crawled(response.url, depth, datetime.datetime.now())  # Ko lấy link con nếu ko phải html
-            print(f"⚠️ Bỏ qua {response.url} vì không phải HTML (Content-Type: {content_type})")
+            # print(f"⚠️ Bỏ qua {response.url} vì không phải HTML (Content-Type: {content_type})")
             return
-
-        new_links = []
-        for link in response.xpath("//*[@href]/@href | //*[@src]/@src").getall():
+        
+        links = response.xpath("//*[@href]/@href | //*[@src]/@src").getall()
+        lenLinks = len(links)
+        for i, link in enumerate(links):
             full_url = urljoin(response.url, link)
-
+            
             if full_url.startswith("https://uet.vnu.edu.vn/") and not self.is_visited(full_url):
-                new_links.append(full_url)
-                yield response.follow(full_url, callback=self.parse, meta={"depth": depth + 1, "parents": response.url})
-
-
-        self.mark_crawled(response.url, depth, datetime.datetime.now())
+                if i == lenLinks:
+                    yield response.follow(full_url, callback=self.parse, meta={"depth": depth + 1, "parents": response.url, "lastUrl": True})
+                else:
+                    yield response.follow(full_url, callback=self.parse, meta={"depth": depth + 1, "parents": response.url, "lastUrl": False})
