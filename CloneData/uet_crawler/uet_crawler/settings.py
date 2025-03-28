@@ -90,3 +90,5 @@ ROBOTSTXT_OBEY = True
 # Set settings whose default value is deprecated to a future-proof value
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
+DUPEFILTER_CLASS = 'uet_crawler.spiders.custom_dupefilter.CustomDupeFilter'
+SCHEDULER_PERSIST = False
