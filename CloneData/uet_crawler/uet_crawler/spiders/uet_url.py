@@ -91,12 +91,21 @@ class UETSpider(scrapy.Spider):
         conn.commit()
         conn.close()
 
-    def error_handler(self, failure):
+    def error_handler(self, failure, response, depth=0, parents="", lastUrl=False):
         request = failure.request
+
+        if lastUrl:
+            self.mark_crawled(parents, datetime.datetime.now())
+        if not self.is_visited(request.url):
+            self.mark_visited(request.url, depth, datetime.datetime.now(), parents)  # Đánh dấu URL đã thu thập
+
         self.mark_crawled(request.url, datetime.datetime.now())
-        request = failure.request
-        if failure.value.response:
+
+        if hasattr(failure.value, "response"):  # Kiểm tra nếu failure có response
             status = failure.value.response.status
+            print(f"Request failed with status {status}: {request.url}")
+        else:
+            print(f"Unexpected error: {failure.value} at {request.url}")
 
     def parse(self, response, depth=0, parents="", lastUrl=False):
 
