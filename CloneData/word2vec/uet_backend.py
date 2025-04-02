@@ -37,8 +37,8 @@ def search_faiss(query, index, tokenizer, model, device, top_k):
     return indices[0]
 
 # Load mô hình BERT QA để tạo câu trả lời
-qa_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-qa_model = BertForQuestionAnswering.from_pretrained("bert-base-uncased").to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+qa_tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
+qa_model = BertForQuestionAnswering.from_pretrained("bert-base-multilingual-uncased").to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
 # Sinh câu trả lời từ BERT
 def generate_answer(question, context):
@@ -89,7 +89,7 @@ def chatbot():
     
     if context:
         answer = generate_answer(query, context)
-        return jsonify({"answer": answer})
+        return jsonify({"answer": answer, "indices": ",".join(map(str, indices.tolist()))})
     else:
         return jsonify({"answer": "Không tìm thấy câu trả lời phù hợp."})
 

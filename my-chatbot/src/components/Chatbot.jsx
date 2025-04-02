@@ -19,7 +19,7 @@ function Chatbot() {
 
     try {
       const response = await axios.post("http://127.0.0.1:5000/chatbot", { question });
-      const botMessage = { sender: "bot", text: response.data.answer };
+      const botMessage = { sender: "bot", text: response.data.answer, indices: response.data.indices };
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error("Error fetching response:", error);
@@ -83,6 +83,7 @@ function Chatbot() {
               elevation={2}
             >
               {msg.text}
+              {msg.indices}
             </Paper>
           </Box>
         ))}
