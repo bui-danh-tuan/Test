@@ -10,6 +10,8 @@ from flask_cors import CORS  # ✅ Thêm CORS để fix lỗi kết nối React
 app = Flask(__name__)
 CORS(app)  # ✅ Cho phép frontend kết nối với backend
 
+modelName = "bert-base-multilingual-uncased"
+
 # Kết nối MySQL
 def connect_db():
     engine = create_engine("mysql+pymysql://root:root@localhost/chatbot")
@@ -37,8 +39,8 @@ def search_faiss(query, index, tokenizer, model, device, top_k):
     return indices[0]
 
 # Load mô hình BERT QA để tạo câu trả lời
-qa_tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-uncased")
-qa_model = BertForQuestionAnswering.from_pretrained("bert-base-multilingual-uncased").to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+qa_tokenizer = BertTokenizer.from_pretrained(modelName)
+qa_model = BertForQuestionAnswering.from_pretrained(modelName).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
 # Sinh câu trả lời từ BERT
 def generate_answer(question, context):
@@ -58,8 +60,8 @@ def generate_answer(question, context):
 
 # Load BERT model và tokenizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-uncased")
-model = BertModel.from_pretrained("bert-base-multilingual-uncased").to(device)
+tokenizer = BertTokenizer.from_pretrained(modelName)
+model = BertModel.from_pretrained(modelName).to(device)
 
 # Kết nối DB và FAISS
 engine = connect_db()

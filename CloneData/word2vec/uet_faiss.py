@@ -1,5 +1,5 @@
 import os
-import faiss  # FAISS chạy trên CPU
+import faiss
 import pickle
 import torch
 from transformers import BertModel, BertTokenizer
@@ -12,6 +12,7 @@ base_path = r"E:\Code\Master\BDT\Test\CloneData"
 faiss_has_accent_path = os.path.join(base_path, "faiss_has_accent.index")
 faiss_no_accent_path = os.path.join(base_path, "faiss_no_accent.index")
 faiss_ids_path = os.path.join(base_path, "faiss_ids.pkl")
+modelName = "bert-base-multilingual-uncased"
 
 # Kết nối MySQL bằng SQLAlchemy
 def connect_db():
@@ -20,8 +21,8 @@ def connect_db():
 
 # Load BERT model và tokenizer
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-uncased")
-model = BertModel.from_pretrained("bert-base-multilingual-uncased").to(device)
+tokenizer = BertTokenizer.from_pretrained(modelName)
+model = BertModel.from_pretrained(modelName).to(device)
 
 # Hàm mã hóa văn bản thành vector
 def encode_text(text):
@@ -71,11 +72,9 @@ for row in result:
     text_has_accent = f"{main_title} {content}" if main_title else content
     text_no_accent = f"{main_title_no_accent} {content_no_accent}" if main_title_no_accent else content_no_accent
 
-    # Hiển thị số vector trước khi thêm
     before_ha = index_has_accent.ntotal
     before_na = index_no_accent.ntotal
 
-    # Mã hóa và thêm vector
     vector_has_accent = encode_text(text_has_accent)
     vector_no_accent = encode_text(text_no_accent)
     index_has_accent.add(vector_has_accent)
@@ -84,21 +83,18 @@ for row in result:
     after_ha = index_has_accent.ntotal
     after_na = index_no_accent.ntotal
 
-    # Cập nhật danh sách ID
     id_list.append(id_clear)
-
-    # Cập nhật trạng thái trong DB
     session.execute(text("UPDATE uet_clear SET vector = 1 WHERE id = :id_clear"), {"id_clear": id_clear})
     session.commit()
 
+    # Lưu ngay sau mỗi lần thêm vector
+    faiss.write_index(index_has_accent, faiss_has_accent_path)
+    faiss.write_index(index_no_accent, faiss_no_accent_path)
+    with open(faiss_ids_path, "wb") as f:
+        pickle.dump(id_list, f)
+
     count += 1
     print(f"✅ {count}/{total} - ID {id_clear} | +1 vector (HA: {before_ha} → {after_ha}, NA: {before_na} → {after_na})")
-
-# Lưu lại FAISS index và ID list
-faiss.write_index(index_has_accent, faiss_has_accent_path)
-faiss.write_index(index_no_accent, faiss_no_accent_path)
-with open(faiss_ids_path, "wb") as f:
-    pickle.dump(id_list, f)
 
 print("✅ Hoàn tất cập nhật và lưu FAISS index! Tổng vector hiện tại:")
 print(f"   - Có dấu: {index_has_accent.ntotal}")
