@@ -10,8 +10,14 @@ from sqlalchemy.orm import sessionmaker
 
 # Load PhoBERT
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-large")
-model = AutoModel.from_pretrained("vinai/phobert-large").to(device)
+model_name = "vinai/phobert-large"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModel.from_pretrained(model_name).to(device)
+
+base_path = r"E:\Code\Master\BDT\Test\CloneData"
+faiss_has_accent_path = os.path.join(base_path, "faiss_has_accent.index")
+faiss_no_accent_path = os.path.join(base_path, "faiss_no_accent.index")
+faiss_ids_path = os.path.join(base_path, "faiss_ids.pkl")
 
 # Kết nối MySQL bằng SQLAlchemy
 engine = create_engine("mysql+pymysql://root:root@localhost/chatbot")
@@ -29,14 +35,14 @@ def get_vector(text):
     return vector
 
 # Tạo FAISS index từ danh sách ID và text
-def build_faiss_index(data, index_path='index.faiss', id_map_path='id_map.pkl'):
+def build_faiss_index(data):
     vectors = []
     new_ids = []
 
     # Load index và id_map nếu đã tồn tại
-    if os.path.exists(index_path) and os.path.exists(id_map_path):
-        index = faiss.read_index(index_path)
-        with open(id_map_path, 'rb') as f:
+    if os.path.exists(faiss_has_accent_path) and os.path.exists(faiss_ids_path):
+        index = faiss.read_index(faiss_has_accent_path)
+        with open(faiss_ids_path, 'rb') as f:
             id_map = pickle.load(f)
         start_index = index.ntotal
     else:
@@ -74,16 +80,16 @@ def build_faiss_index(data, index_path='index.faiss', id_map_path='id_map.pkl'):
         id_map[text_id] = start_index + i
 
     # Lưu lại
-    faiss.write_index(index, index_path)
-    with open(id_map_path, 'wb') as f:
+    faiss.write_index(index, faiss_has_accent_path)
+    with open(faiss_ids_path, 'wb') as f:
         pickle.dump(id_map, f)
 
     print(f"Đã thêm {len(new_ids)} vector mới. Tổng số vector: {index.ntotal}")
 
 # Truy xuất vector theo ID
-def get_vector_by_id(text_id, index_path='index.faiss', id_map_path='id_map.pkl'):
-    index = faiss.read_index(index_path)
-    with open(id_map_path, 'rb') as f:
+def get_vector_by_id(text_id):
+    index = faiss.read_index(faiss_has_accent_path)
+    with open(faiss_ids_path, 'rb') as f:
         id_map = pickle.load(f)
 
     if text_id not in id_map:
@@ -94,9 +100,9 @@ def get_vector_by_id(text_id, index_path='index.faiss', id_map_path='id_map.pkl'
     return index.reconstruct(vector_index)
 
 # Truy xuất ID gần nhất theo vector
-def get_id_by_text(text, index_path='index.faiss', id_map_path='id_map.pkl'):
-    index = faiss.read_index(index_path)
-    with open(id_map_path, 'rb') as f:
+def get_id_by_text(text):
+    index = faiss.read_index(faiss_has_accent_path)
+    with open(faiss_ids_path, 'rb') as f:
         id_map = pickle.load(f)
     rev_id_map = {v: k for k, v in id_map.items()}
 
@@ -132,12 +138,3 @@ if __name__ == "__main__":
 
     for data_ in list_data:
         build_faiss_index(pd.DataFrame(data_))
-
-    # Bước 2: Truy xuất vector theo ID
-    # vector = get_vector_by_id("2")
-    # print("Vector for ID 2:", vector[:5], "...")  # In 5 giá trị đầu tiên
-
-    # Bước 3: Truy xuất ID gần nhất theo câu truy vấn
-    test_text = "ữa vì thế các em nên tiếp tục nâng cao và trau dồi ngoại ngữ là những chuyên gia công nghệ nên có thái độ mở và lấy mục tiêu học tập suốt đời để trở thành những người d"
-    matched_id, distance = get_id_by_text(test_text)
-    print(f"Closest ID to query: {matched_id}, distance: {distance:.4f}")
