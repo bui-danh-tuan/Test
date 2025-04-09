@@ -12,7 +12,7 @@ base_path = r"E:\Code\Master\BDT\Test\CloneData"
 faiss_has_accent_path = os.path.join(base_path, "faiss_has_accent.index")
 faiss_no_accent_path = os.path.join(base_path, "faiss_no_accent.index")
 faiss_ids_path = os.path.join(base_path, "faiss_ids.pkl")
-modelName = "bert-base-multilingual-uncased"
+modelName = "bert-base-multilingual-cased"
 
 # Kết nối MySQL bằng SQLAlchemy
 def connect_db():
@@ -87,14 +87,15 @@ for row in result:
     session.execute(text("UPDATE uet_clear SET vector = 1 WHERE id = :id_clear"), {"id_clear": id_clear})
     session.commit()
 
-    # Lưu ngay sau mỗi lần thêm vector
-    faiss.write_index(index_has_accent, faiss_has_accent_path)
-    faiss.write_index(index_no_accent, faiss_no_accent_path)
-    with open(faiss_ids_path, "wb") as f:
-        pickle.dump(id_list, f)
 
     count += 1
-    print(f"✅ {count}/{total} - ID {id_clear} | +1 vector (HA: {before_ha} → {after_ha}, NA: {before_na} → {after_na})")
+    if count % 5000 == 0:
+        # Lưu ngay sau mỗi lần thêm vector
+        faiss.write_index(index_has_accent, faiss_has_accent_path)
+        faiss.write_index(index_no_accent, faiss_no_accent_path)
+        with open(faiss_ids_path, "wb") as f:
+            pickle.dump(id_list, f)
+        print(f"✅ {count}/{total} - ID {id_clear} | +1 vector (HA: {before_ha} → {after_ha}, NA: {before_na} → {after_na})")
 
 print("✅ Hoàn tất cập nhật và lưu FAISS index! Tổng vector hiện tại:")
 print(f"   - Có dấu: {index_has_accent.ntotal}")

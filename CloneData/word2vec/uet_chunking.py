@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, text
 from bs4 import BeautifulSoup
 from datetime import datetime
+import re
 
 # Kết nối database bằng SQLAlchemy
 username = "root"
@@ -13,6 +14,39 @@ engine = create_engine(f"mysql+pymysql://{username}:{password}@{host}/{database}
 with engine.connect() as conn:
     result = conn.execute(text("SELECT id, id_url, paragraph FROM uet_content WHERE type = 'url' AND chunking = 0;"))
     rows = result.fetchall()
+
+# Hàm tách đoạn văn thành các đoạn nhỏ <= 500 từ
+def split_into_chunks(html, max_words=300):
+    soup = BeautifulSoup(html, "html.parser")
+    content_div = soup.find(id="content")
+
+    if content_div:
+        raw_text = content_div.get_text(separator="\n")
+        cleaned_text = re.sub(r'\n\s*\n+', '\n\n', raw_text.strip())
+    else:
+        print("Không tìm thấy thẻ có id='content'")
+        cleaned_text = ""
+
+
+    paragraphs = cleaned_text.split("\n\n")
+    chunks = []
+    current_chunk = ""
+
+    for para in paragraphs:
+        if not para.strip():
+            continue
+        words = para.strip().split()
+        if len(current_chunk.split()) + len(words) <= max_words:
+            current_chunk += " " + " ".join(words)
+        else:
+            chunks.append(current_chunk.strip())
+            current_chunk = " ".join(words)
+
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
 
 # Xử lý từng dòng dữ liệu
 with engine.connect() as conn:
@@ -27,16 +61,12 @@ with engine.connect() as conn:
         
         chunks_to_insert = []
         
+        chunks = split_into_chunks(html_content)
+
         # Chia nội dung theo từng đoạn <p>
-        for p in soup.find_all("p"):
-            content_text = p.get_text(strip=True)
+        for content_text in chunks:
             if not content_text:  # Bỏ qua đoạn không có text
                 continue
-            
-            # Kiểm tra nếu có bất kỳ thẻ nào chứa link (href hoặc src)
-            links = [tag['href'] for tag in p.find_all(href=True)] + [tag['src'] for tag in p.find_all(src=True)]
-            if links:
-                content_text += "\n" + "\n".join(links)
             
             last_modified = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
             

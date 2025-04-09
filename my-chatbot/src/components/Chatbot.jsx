@@ -83,6 +83,17 @@ function Chatbot() {
               elevation={2}
             >
               {msg.text}
+            </Paper>
+            <Paper
+              sx={{
+                p: 2,
+                maxWidth: "75%",
+                borderRadius: 2,
+                backgroundColor: msg.sender === "user" ? "#2196f3" : "#333",
+                color: msg.sender === "user" ? "white" : "#ddd",
+              }}
+              elevation={2}
+            >
               {msg.indices}
             </Paper>
           </Box>

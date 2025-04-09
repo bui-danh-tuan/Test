@@ -10,7 +10,7 @@ from flask_cors import CORS  # ✅ Thêm CORS để fix lỗi kết nối React
 app = Flask(__name__)
 CORS(app)  # ✅ Cho phép frontend kết nối với backend
 
-modelName = "bert-base-multilingual-uncased"
+modelName = "bert-base-multilingual-cased"
 
 # Kết nối MySQL
 def connect_db():
@@ -91,7 +91,7 @@ def chatbot():
     
     if context:
         answer = generate_answer(query, context)
-        return jsonify({"answer": answer, "indices": ",".join(map(str, indices.tolist()))})
+        return jsonify({"answer": answer, "indices": context})
     else:
         return jsonify({"answer": "Không tìm thấy câu trả lời phù hợp."})
 
