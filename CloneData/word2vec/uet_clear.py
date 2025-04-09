@@ -34,10 +34,11 @@ def expand_abbreviations(text):
     return " ".join(words)
 
 # Xử lý toàn bộ pipeline
-def preprocess_text(text):
+def preprocess_text(text, max_length=30):
     text = normalize_text(text)  # Bước 1: Chuẩn hóa
     text = expand_abbreviations(text)  # Bước 2: Xử lý viết tắt
-    return text, remove_accents(text)  # Bước 3: Tạo phiên bản không dấu
+    text = ' '.join([t for t in text.split() if len(t) < max_length]) # Bước 3: Loại bỏ các từ quá dài
+    return text, remove_accents(text)  # Bước 4: Tạo phiên bản không dấu
 
 # Trích xuất dữ liệu từ bảng uet_chunking và lưu vào uet_clear
 def process_and_store_data():

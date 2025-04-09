@@ -1,40 +1,11 @@
-import faiss
-import torch
-import pickle
-from transformers import BertTokenizer, BertModel
+from transformers import AutoTokenizer
 
-# Bước 1: Load tokenizer và model
-tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
-model = BertModel.from_pretrained("bert-base-multilingual-cased")
-model.eval()
+text = """
+'th2 18 cập nhật danh sách nộp hồ sơ trợ cấp xã hội học kỳ ii năm học 20242025 theo thông báo ngày 22012025 httpsuetvnueduvnnophonhantrocapxahoihockyiinamhoc20242025 hiện nay đã hết thời gian gian nộp hồ sơ tcxh hkii năm học 20242025 phòng ctsv trường đhcn xin cập nhật danh sách sinh viên đã nộp hồ sơ tính đến hết 8h ngày 18022024 đề nghị các sinh viên có tên trong danh sách kiểm tra thông tin đính kèm bởi tuyết nga chế độ chính sách chi tiết th2 18 cập nhật danh sách nộp hồ sơ hỗ trợ chi phí học tập học kỳ ii năm học 20242025 theo thông báo ngày 22012025 httpsuetvnueduvnnophohuongchinhsachhotrochiphihoctaphockiiinamhoc20242025 hiện nay đã hết thời gian gian nộp hồ sơ hỗ trợ chi phí học tập học kỳ ii năm học 20242025 phòng ctsv trường đhcn xin cập nhật danh sách sinh viên đính kèm đã nộp hồ sơ tính đến hết 8h ngày 18022024 đề nghị các sinh viên có bởi tuyết nga chế độ chính sách chi tiết th2 17 cập nhật danh sách nộp hồ sơ miễn giảm học phí học kỳ ii năm học 20242025'
 
-# Bước 2: Load FAISS index và danh sách id
-index = faiss.read_index(r"E:\Code\Master\BDT\Test\CloneData\faiss_has_accent.index")
-with open(r"E:\Code\Master\BDT\Test\CloneData\faiss_ids.pkl", "rb") as f:
-    id_list = pickle.load(f)  # list các id tương ứng với từng vector trong index
+"""
+tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-large")
 
-# Bước 3: Nhập đoạn văn bản truy vấn
-query = "vietcombank"
-
-# Tokenize và tạo embedding
-inputs = tokenizer(query, return_tensors="pt", truncation=True, max_length=512)
-with torch.no_grad():
-    outputs = model(**inputs)
-    last_hidden_state = outputs.last_hidden_state  # (batch_size, seq_len, hidden_size)
-    attention_mask = inputs['attention_mask']
-    mask_expanded = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-    summed = torch.sum(last_hidden_state * mask_expanded, dim=1)
-    summed_mask = torch.clamp(mask_expanded.sum(dim=1), min=1e-9)
-    mean_pooled = summed / summed_mask  # mean pooling
-
-# Chuyển sang numpy
-query_vector = mean_pooled.numpy()
-
-# Bước 4: Tìm top 5 vector gần nhất
-k = 5
-distances, indices = index.search(query_vector, k)
-
-# Bước 5: In ra ID tương ứng
-print("Top 5 ID gần nhất:")
-for idx in indices[0]:
-    print(id_list[idx])
+# Đếm số token
+tokens = tokenizer.tokenize(text)
+print(f"Số token: {len(tokens)}")

@@ -15,8 +15,8 @@ with engine.connect() as conn:
     result = conn.execute(text("SELECT id, id_url, paragraph FROM uet_content WHERE type = 'url' AND chunking = 0;"))
     rows = result.fetchall()
 
-# Hàm tách đoạn văn thành các đoạn nhỏ <= 500 từ
-def split_into_chunks(html, max_words=300):
+# Hàm tách đoạn văn thành các đoạn nhỏ <= max_words từ
+def split_into_chunks(html, max_words=200):
     soup = BeautifulSoup(html, "html.parser")
     content_div = soup.find(id="content")
 
@@ -27,26 +27,38 @@ def split_into_chunks(html, max_words=300):
         print("Không tìm thấy thẻ có id='content'")
         cleaned_text = ""
 
-
     paragraphs = cleaned_text.split("\n\n")
     chunks = []
     current_chunk = ""
 
     for para in paragraphs:
-        if not para.strip():
+        para = para.strip()
+        if not para:
             continue
-        words = para.strip().split()
-        if len(current_chunk.split()) + len(words) <= max_words:
-            current_chunk += " " + " ".join(words)
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = " ".join(words)
 
+        words = para.split()
+        if len(words) <= max_words:
+            # Gộp nếu còn dư chỗ trong chunk hiện tại
+            if len(current_chunk.split()) + len(words) <= max_words:
+                current_chunk += " " + " ".join(words)
+            else:
+                chunks.append(current_chunk.strip())
+                current_chunk = " ".join(words)
+        else:
+            # Tách đoạn dài thành nhiều chunk con
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+
+            for i in range(0, len(words), max_words):
+                chunk = " ".join(words[i:i + max_words])
+                chunks.append(chunk.strip())
+
+    # Thêm chunk cuối nếu còn
     if current_chunk.strip():
         chunks.append(current_chunk.strip())
 
     return chunks
-
 
 # Xử lý từng dòng dữ liệu
 with engine.connect() as conn:
@@ -63,7 +75,6 @@ with engine.connect() as conn:
         
         chunks = split_into_chunks(html_content)
 
-        # Chia nội dung theo từng đoạn <p>
         for content_text in chunks:
             if not content_text:  # Bỏ qua đoạn không có text
                 continue
@@ -71,7 +82,11 @@ with engine.connect() as conn:
             last_modified = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
             
             chunks_to_insert.append({
-                "id_url": id_url, "main_title": main_title, "sub_title": None, "content": content_text, "last_modified": last_modified
+                "id_url": id_url,
+                "main_title": main_title,
+                "sub_title": None,
+                "content": content_text,
+                "last_modified": last_modified
             })
         
         # Lưu tất cả chunks của một dòng vào bảng uet_chunking
@@ -83,7 +98,7 @@ with engine.connect() as conn:
             )
             conn.commit()
         
-        # Cập nhật trạng thái chunkin = 1
+        # Cập nhật trạng thái chunking = 1
         conn.execute(text("UPDATE uet_content SET chunking = 1 WHERE id = :id_content"), {"id_content": id_content})
         conn.commit()
         count += 1
