@@ -16,7 +16,7 @@ with engine.connect() as conn:
     rows = result.fetchall()
 
 # Hàm tách đoạn văn thành các đoạn nhỏ <= max_words từ
-def split_into_chunks(html, max_words=200):
+def split_into_chunks(html, max_words=100):
     soup = BeautifulSoup(html, "html.parser")
     content_div = soup.find(id="content")
 

@@ -1,11 +1,11 @@
-from transformers import AutoTokenizer
+import faiss
 
-text = """
-'th2 18 cập nhật danh sách nộp hồ sơ trợ cấp xã hội học kỳ ii năm học 20242025 theo thông báo ngày 22012025 httpsuetvnueduvnnophonhantrocapxahoihockyiinamhoc20242025 hiện nay đã hết thời gian gian nộp hồ sơ tcxh hkii năm học 20242025 phòng ctsv trường đhcn xin cập nhật danh sách sinh viên đã nộp hồ sơ tính đến hết 8h ngày 18022024 đề nghị các sinh viên có tên trong danh sách kiểm tra thông tin đính kèm bởi tuyết nga chế độ chính sách chi tiết th2 18 cập nhật danh sách nộp hồ sơ hỗ trợ chi phí học tập học kỳ ii năm học 20242025 theo thông báo ngày 22012025 httpsuetvnueduvnnophohuongchinhsachhotrochiphihoctaphockiiinamhoc20242025 hiện nay đã hết thời gian gian nộp hồ sơ hỗ trợ chi phí học tập học kỳ ii năm học 20242025 phòng ctsv trường đhcn xin cập nhật danh sách sinh viên đính kèm đã nộp hồ sơ tính đến hết 8h ngày 18022024 đề nghị các sinh viên có bởi tuyết nga chế độ chính sách chi tiết th2 17 cập nhật danh sách nộp hồ sơ miễn giảm học phí học kỳ ii năm học 20242025'
+# Define the path to the FAISS index
+faiss_index_path = r"E:\Code\Master\BDT\Test\CloneData\faiss_has_accent.index"
 
-"""
-tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-large")
+# Load the FAISS index
+index = faiss.read_index(faiss_index_path)
 
-# Đếm số token
-tokens = tokenizer.tokenize(text)
-print(f"Số token: {len(tokens)}")
+# Get the total number of vectors in the index
+num_vectors = index.ntotal
+print(f"Total number of vectors: {num_vectors}")

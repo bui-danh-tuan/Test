@@ -26,13 +26,17 @@ session = Session()
 
 # Chuyển văn bản thành vector sử dụng mean pooling
 def get_vector(text):
-    input_ids = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)["input_ids"].to(device)
-    with torch.no_grad():
-        outputs = model(input_ids)
-        last_hidden_state = outputs.last_hidden_state
-        # Mean pooling
-        vector = last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
-    return vector
+    try:
+        input_ids = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)["input_ids"].to(device)
+        with torch.no_grad():
+            outputs = model(input_ids)
+            last_hidden_state = outputs.last_hidden_state
+            # Mean pooling
+            vector = last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
+        return vector
+    except Exception as e:
+        print(f"Đã xảy ra lỗi: {e}")
+    return None
 
 # Tạo FAISS index từ danh sách ID và text
 def build_faiss_index(data):
@@ -58,6 +62,9 @@ def build_faiss_index(data):
             print(f"ID '{text_id}' đã tồn tại. Bỏ qua.")
             continue
         vec = get_vector(text)
+        if(vec is None):
+            print(f"ID '{text_id}' Lỗi. Bỏ qua.")
+            continue
         vectors.append(vec)
         new_ids.append(text_id)
 
@@ -120,7 +127,7 @@ if __name__ == "__main__":
     data = []
     list_data = []
     count = 0
-    number_split = 100
+    number_split = 1000
     for row in result:
         id_clear, main_title, main_title_no_accent, content, content_no_accent = row
         data.append({
@@ -136,5 +143,9 @@ if __name__ == "__main__":
     if data:
         list_data.append(data)
 
+    len_list_data = len(list_data)
+    count_list_data = 0
     for data_ in list_data:
+        count_list_data += 1
+        print(f"{count_list_data}/{len_list_data}")
         build_faiss_index(pd.DataFrame(data_))

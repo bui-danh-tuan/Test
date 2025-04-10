@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
-import { Box, Paper, TextField, Button, Typography, CircularProgress } from "@mui/material";
+import IconButton from '@mui/material/IconButton';
+import SendIcon from '@mui/icons-material/Send';
+
+import {
+  Box,
+  Paper,
+  TextField,
+  Button,
+  Typography,
+  CircularProgress,
+} from "@mui/material";
 
 function Chatbot() {
   const [messages, setMessages] = useState([]);
@@ -18,12 +28,22 @@ function Chatbot() {
     setQuestion("");
 
     try {
-      const response = await axios.post("http://127.0.0.1:5000/chatbot", { question });
-      const botMessage = { sender: "bot", text: response.data.answer, context: response.data.context };
+      const response = await axios.post("http://127.0.0.1:5000/chatbot", {
+        question,
+      });
+      const botMessage = {
+        sender: "bot",
+        text: response.data.answer,
+        context: response.data.context,
+      };
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error("Error fetching response:", error);
-      const errorMessage = { sender: "bot", text: "Lỗi kết nối đến server!" };
+      const errorMessage = {
+        sender: "bot",
+        text: "Lỗi kết nối đến server!",
+        context: "",
+      };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
@@ -39,27 +59,32 @@ function Chatbot() {
       sx={{
         display: "flex",
         flexDirection: "column",
-        justifyContent: "center",
-        alignItems: "center",
         height: "100vh",
         width: "100vw",
-        backgroundColor: "#121212",
+        backgroundColor: "#1e1e1e",
         color: "white",
       }}
     >
-      <Typography variant="h4" sx={{ mb: 2, fontWeight: "bold" }}>
+      <Typography
+        variant="h5"
+        sx={{ textAlign: "center", fontWeight: "bold", mb: 2 }}
+      >
         Chatbot UET
       </Typography>
 
       <Paper
         sx={{
           flex: 1,
-          width: "80vw",
+          width: "100%",
           maxWidth: "800px",
-          overflowY: "auto",
+          margin: "0 auto",
           p: 2,
-          backgroundColor: "#1e1e1e",
+          backgroundColor: "#2a2a2a",
           borderRadius: 2,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          scrollbarWidth: "thin",
         }}
         elevation={3}
       >
@@ -68,66 +93,85 @@ function Chatbot() {
             key={index}
             sx={{
               display: "flex",
-              justifyContent: msg.sender === "user" ? "flex-end" : "flex-start",
+              flexDirection: "column",
+              alignItems: msg.sender === "user" ? "flex-end" : "flex-start",
               my: 1,
             }}
           >
             <Paper
               sx={{
-                p: 2,
+                px: 2,
+                py: 1,
                 maxWidth: "75%",
-                borderRadius: 2,
-                backgroundColor: msg.sender === "user" ? "#2196f3" : "#333",
-                color: msg.sender === "user" ? "white" : "#ddd",
+                borderRadius: 10,
+                backgroundColor: msg.sender === "user" ? "#424242" : "#333333",
+                color: "#fff",
+                whiteSpace: "pre-wrap",
+                wordWrap: "break-word",
+                boxShadow: "none", // ❌ bỏ đổ bóng
+                border: "none",    // ❌ bỏ border nếu có
               }}
-              elevation={2}
+              elevation={1}
             >
               {msg.text}
             </Paper>
-            <Paper
-              sx={{
-                p: 2,
-                maxWidth: "75%",
-                borderRadius: 2,
-                backgroundColor: msg.sender === "user" ? "#2196f3" : "#333",
-                color: msg.sender === "user" ? "white" : "#ddd",
-              }}
-              elevation={2}
-            >
-              {msg.context}
-            </Paper>
+            {msg.sender === "bot" && msg.context && (
+              <Typography
+                variant="body2"
+                sx={{
+                  maxWidth: "70%",
+                  mt: 0.5,
+                  fontStyle: "italic",
+                  color: "#aaa",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {msg.context}
+              </Typography>
+            )}
           </Box>
         ))}
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-            <CircularProgress size={24} />
+            <CircularProgress size={24} color="primary" />
           </Box>
         )}
         <div ref={chatEndRef}></div>
       </Paper>
 
-      <Box component="form" onSubmit={handleSubmit} sx={{ display: "flex", width: "80vw", maxWidth: "800px", mt: 2 }}>
+      <Box
+        component="form"
+        onSubmit={handleSubmit}
+        sx={{
+          display: "flex",
+          width: "100%",
+          maxWidth: "800px",
+          margin: "16px auto 0",
+        }}
+      >
         <TextField
           fullWidth
           variant="outlined"
-          placeholder="Nhập câu hỏi..."
+          placeholder="Nhập câu hỏi của bạn..."
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           sx={{
-            backgroundColor: "#1e1e1e",
-            borderRadius: 1,
+            backgroundColor: "#2a2a2a",
             input: { color: "white" },
-            fieldset: { borderColor: "#555" },
-            "&:hover fieldset": { borderColor: "#888" },
+            borderRadius: 1,
           }}
         />
-        <Button
+        <IconButton
           type="submit"
-          variant="contained"
-          sx={{ ml: 2, bgcolor: "#1976d2", "&:hover": { bgcolor: "#1565c0" } }}
+          sx={{
+            ml: 1,
+            color: "white",
+            borderRadius: 1,
+          }}
         >
-          Gửi
-        </Button>
+          <SendIcon />
+        </IconButton>
+
       </Box>
     </Box>
   );
