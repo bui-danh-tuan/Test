@@ -1,50 +1,46 @@
-from flask import Flask, request, jsonify
 import torch
 from transformers import AutoTokenizer, AutoModel
 import faiss
+import pandas as pd
+import numpy as np
 import os
 import pickle
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import requests
-from flask_cors import CORS  
 
-# === Cấu hình Flask ===
-app = Flask(__name__)
-CORS(app)
-
-# === Cấu hình DeepSeek API ===
-API_KEY = 'sk-28d50b0bd2614132a76b99517444980f'
+# === Thay bằng API Key thật của bạn ===
+API_KEY = ''
 API_URL = 'https://api.deepseek.com/v1/chat/completions'
 
-# === Load PhoBERT ===
+# Load PhoBERT
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model_name = "vinai/phobert-large"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name).to(device)
 
-# === FAISS paths ===
 base_path = r"E:\Code\Master\BDT\Test\CloneData"
 faiss_has_accent_path = os.path.join(base_path, "faiss_has_accent.index")
+faiss_no_accent_path = os.path.join(base_path, "faiss_no_accent.index")
 faiss_ids_path = os.path.join(base_path, "faiss_ids.pkl")
 
-# === MySQL connection ===
+# Kết nối MySQL bằng SQLAlchemy
 engine = create_engine("mysql+pymysql://root:root@localhost/chatbot")
 Session = sessionmaker(bind=engine)
 session = Session()
 
 
-# === Hàm chuyển văn bản thành vector ===
+# Chuyển văn bản thành vector sử dụng mean pooling
 def get_vector(text):
     input_ids = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)["input_ids"].to(device)
     with torch.no_grad():
         outputs = model(input_ids)
         last_hidden_state = outputs.last_hidden_state
+        # Mean pooling
         vector = last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
     return vector
 
-
-# === Lấy các ID gần nhất theo vector ===
+# Truy xuất ID gần nhất theo vector
 def get_ids_by_text(text, top_k=5):
     index = faiss.read_index(faiss_has_accent_path)
     with open(faiss_ids_path, 'rb') as f:
@@ -63,8 +59,6 @@ def get_ids_by_text(text, top_k=5):
 
     return results
 
-
-# === Gọi API DeepSeek để lấy câu trả lời ===
 def call_deepseek(question, context):
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -84,39 +78,27 @@ def call_deepseek(question, context):
     }
 
     response = requests.post(API_URL, headers=headers, json=payload)
+
+    # === In kết quả ra màn hình ===
     if response.status_code == 200:
-        return response.json()['choices'][0]['message']['content']
+        answer = response.json()['choices'][0]['message']['content']
+        print("Câu trả lời:", answer)
     else:
-        return f"Lỗi khi gọi API: {response.text}"
+        print("Lỗi khi gọi API:", response.text)
 
-
-# === API: Nhận câu hỏi và trả về câu trả lời ===
-@app.route("/chatbot", methods=["POST"])
-def chatbot():
-    data = request.json
-    question = data.get("question")
-
-    if not question:
-        return jsonify({"error": "Thiếu câu hỏi"}), 400
-
-    try:
-        list_context = get_ids_by_text(question)
-        list_ids = [l[0] for l in list_context]
-
-        placeholders = ','.join([':id'+str(i) for i in range(len(list_ids))])
-        sql = text(f"SELECT id, content FROM uet_clear WHERE id IN ({placeholders})")
-        params = {f'id{i}': list_ids[i] for i in range(len(list_ids))}
-        results = session.execute(sql, params).fetchall()
-
-        context = "\n\n".join([row[1] for row in results])
-
-        answer = call_deepseek(question, context)
-        return jsonify({"context": context, "answer": answer})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# === Chạy server Flask ===
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    question = "Phó hiệu trưởng trường đại học công nghệ phát biểu gì?"
+    list_context = get_ids_by_text(question)
+    list_ids = [l[0] for l in list_context]
+    print(list_context)
+    # Truy vấn tất cả content có id trong list_ids
+    placeholders = ','.join([':id'+str(i) for i in range(len(list_ids))])
+    sql = text(f"SELECT id, content FROM uet_clear WHERE id IN ({placeholders})")
+    params = {f'id{i}': list_ids[i] for i in range(len(list_ids))}
+    results = session.execute(sql, params).fetchall()
+
+    # Ghép các content lại làm ngữ cảnh
+    context = "\n\n".join([row[1] for row in results])
+
+    # Gọi DeepSeek API
+    call_deepseek(question, context)

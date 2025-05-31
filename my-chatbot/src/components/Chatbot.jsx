@@ -7,7 +7,6 @@ import {
   Box,
   Paper,
   TextField,
-  Button,
   Typography,
   CircularProgress,
 } from "@mui/material";
@@ -31,18 +30,23 @@ function Chatbot() {
       const response = await axios.post("http://127.0.0.1:5000/chatbot", {
         question,
       });
+
       const botMessage = {
         sender: "bot",
         text: response.data.answer,
+        expected_answer: response.data.expected_answer,
+        relevant_id: response.data.relevant_id,
+        top_k_ids: response.data.top_k_ids,
+        point: response.data.point,
         context: response.data.context,
       };
+
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error("Error fetching response:", error);
       const errorMessage = {
         sender: "bot",
         text: "Lỗi kết nối đến server!",
-        context: "",
       };
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
@@ -108,34 +112,86 @@ function Chatbot() {
                 color: "#fff",
                 whiteSpace: "pre-wrap",
                 wordWrap: "break-word",
-                boxShadow: "none", // ❌ bỏ đổ bóng
-                border: "none",    // ❌ bỏ border nếu có
+                boxShadow: "none",
               }}
               elevation={1}
             >
               {msg.text}
             </Paper>
-            {msg.sender === "bot" && msg.context && (
-              <Typography
-                variant="body2"
+
+            {/* Nếu là phản hồi từ bot, hiển thị từng phần theo thứ tự */}
+            {msg.sender === "bot" && (
+              <Box
                 sx={{
-                  maxWidth: "70%",
-                  mt: 0.5,
-                  fontStyle: "italic",
-                  color: "#aaa",
-                  whiteSpace: "pre-wrap",
+                  maxWidth: "75%",
+                  mt: 1,
+                  fontSize: "0.9rem",
+                  color: "#ccc",
                 }}
               >
-                {msg.context}
-              </Typography>
+                {msg.expected_answer && (
+                  <>
+                    <Typography sx={{ fontWeight: "bold" }}>
+                      ✅ Câu trả lời kỳ vọng:
+                    </Typography>
+                    <Typography sx={{ mb: 1, whiteSpace: "pre-wrap" }}>
+                      {msg.expected_answer}
+                    </Typography>
+                  </>
+                )}
+
+                {msg.relevant_id && (
+                  <Typography sx={{ mb: 1 }}>
+                    🔗 ID đoạn văn đúng: <strong>{msg.relevant_id}</strong>
+                  </Typography>
+                )}
+
+                {msg.top_k_ids && (
+                  <Typography sx={{ mb: 1 }}>
+                    🔍 Top {msg.top_k_ids.length} đoạn được truy hồi:{" "}
+                    <strong>{msg.top_k_ids.join(", ")}</strong>
+                  </Typography>
+                )}
+
+                {msg.point && (
+                  <Typography sx={{ mb: 1 }}>
+                    📊 Thang điểm đánh giá:{" "}
+                    <strong>
+                      {Object.entries(msg.point)
+                        .map(([key, val]) => `${key}: ${val}`)
+                        .join(" | ")}
+                    </strong>
+                  </Typography>
+                )}
+
+                {msg.context && (
+                  <>
+                    <Typography sx={{ fontWeight: "bold", mt: 2 }}>
+                      📄 Ngữ cảnh sử dụng:
+                    </Typography>
+                    <Typography
+                      sx={{
+                        fontStyle: "italic",
+                        color: "#aaa",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
+                      {msg.context}
+                    </Typography>
+                  </>
+                )}
+              </Box>
             )}
+
           </Box>
         ))}
+
         {loading && (
           <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
             <CircularProgress size={24} color="primary" />
           </Box>
         )}
+
         <div ref={chatEndRef}></div>
       </Paper>
 
@@ -171,7 +227,6 @@ function Chatbot() {
         >
           <SendIcon />
         </IconButton>
-
       </Box>
     </Box>
   );

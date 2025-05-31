@@ -1,4 +1,0 @@
-CloneData/faiss_has_accent.index filter=lfs diff=lfs merge=lfs -text
-CloneData/uet_crawler/uet_crawler/spiders/scrapy.db filter=lfs diff=lfs merge=lfs -text
-CloneData/faiss_no_accent.index filter=lfs diff=lfs merge=lfs -text
-CloneData/faiss_ids.pkl filter=lfs diff=lfs merge=lfs -text

@@ -7,7 +7,7 @@ class UETSpider(scrapy.Spider):
     name = "uet_url"
     allowed_domains = ["uet.vnu.edu.vn"]
     db_path = "scrapy.db"
-    max_depth = 10  # Giới hạn độ sâu tối đa
+    max_depth = 3  # Giới hạn độ sâu tối đa
     base_depth = 0
 
     def __init__(self, *args, **kwargs):
@@ -26,7 +26,7 @@ class UETSpider(scrapy.Spider):
         c.execute("""SELECT url, depth
             FROM uet_url
             WHERE crawled = 0
-            AND depth = (SELECT MIN(depth) FROM uet_url WHERE crawled = 0);""")
+            AND depth = (SELECT MIN(depth) FROM uet_url WHERE crawled = 0) LIMIT 1;""")
         result = c.fetchall()
         conn.close()
         if result != None and len(result) > 0:

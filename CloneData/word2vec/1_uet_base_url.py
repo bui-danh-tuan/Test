@@ -3,7 +3,6 @@ from bs4 import BeautifulSoup
 import urllib3
 from sqlalchemy import create_engine, text
 
-# 1. Kết nối MySQL
 engine = create_engine("mysql+pymysql://root:root@localhost/chatbot")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -18,11 +17,18 @@ print(f"Tổng số sitemap con: {len(sitemaps)}")
 total_urls = 0
 new_urls = 0
 
-# 2. Hàm kiểm tra URL đã tồn tại chưa
 def url_exists(url):
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1 FROM uet_url WHERE url = :url LIMIT 1"), {"url": url})
         return result.first() is not None
+
+def insert_url(url):
+    with engine.begin() as conn:   # <-- mỗi lần thêm là commit luôn!
+        conn.execute(
+            text("INSERT INTO uet_url (url, depth, id_parents) VALUES (:url, 0, NULL)"),
+            {"url": url}
+        )
+        print(f"add url: {url}")
 
 for sitemap in sitemaps:
     loc = sitemap.find('loc').text
@@ -34,6 +40,7 @@ for sitemap in sitemaps:
         url = u.find('loc').text
         total_urls += 1
         if not url_exists(url):
+            insert_url(url)  # commit ngay mỗi lần thêm
             new_urls += 1
             count_new += 1
     print(f"{loc}: {len(urls)} URL, trong đó {count_new} URL mới")

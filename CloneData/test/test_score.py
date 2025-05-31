@@ -1,32 +1,18 @@
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from rouge_score import rouge_scorer
-from bert_score import score
+from pathlib import Path
+import os
 
-def bleu_score(pred, ref):
-    return sentence_bleu(
-        [ref.split()],
-        pred.split(),
-        smoothing_function=SmoothingFunction().method1
-    )
+# Thư mục mặc định chứa mô hình Hugging Face đã tải
+cache_dir = Path.home() / ".cache" / "huggingface" / "transformers"
 
-def rouge_l(pred, ref):
-    scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
-    score_ = scorer.score(ref, pred)
-    return score_['rougeL'].fmeasure
+# Duyệt thư mục và liệt kê tên mô hình (folder chứa checkpoint)
+def list_downloaded_models(cache_dir):
+    models = set()
+    for path in cache_dir.glob("**/model.safetensors"):
+        model_dir = path.parent
+        models.add(str(model_dir))
+    return sorted(models)
 
-def bertscore_f1(pred, ref):
-    _, _, f1 = score([pred], [ref], lang="vi", model_type="vinai/phobert-large")
-    return f1[0].item()
-
-def evaluate_text_generation(prediction, ground_truth):
-    return {
-        "BLEU": round(bleu_score(prediction, ground_truth), 4),
-        "ROUGE-L": round(rouge_l(prediction, ground_truth), 4),
-        "BERTScore": round(bertscore_f1(prediction, ground_truth), 4)
-    }
-
-pred = "Trường bắt đầu nhận hồ sơ xét tuyển từ 1/6 đến 15/7."
-truth = "Thời gian nhận hồ sơ là từ ngày 1/6 đến hết ngày 15/7."
-
-result = evaluate_text_generation(pred, truth)
-print(result)
+models = list_downloaded_models(cache_dir)
+print("Các mô hình đã tải về:")
+for m in models:
+    print("-", m)
