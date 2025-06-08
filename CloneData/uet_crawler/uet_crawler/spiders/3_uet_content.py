@@ -10,7 +10,8 @@ class ContentSpider(scrapy.Spider):
 
     def __init__(self):
         """Khởi tạo CSDL SQLite và tạo bảng nếu chưa tồn tại."""
-        self.conn = sqlite3.connect("scrapy.db")  # Kết nối đến SQLite
+        db_path = r"E:\Code\Master\BDT\Test\CloneData\uet_crawler\scrapy.db"  # Đường dẫn đến file .db
+        self.conn = sqlite3.connect(db_path)  # Kết nối đến SQLite
         self.cursor = self.conn.cursor()
 
         # Lấy danh sách URL cần thu thập
@@ -79,6 +80,10 @@ class ContentSpider(scrapy.Spider):
                 'application/msword': '.doc',
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
             }.get(content_type, '')  # Mặc định không có đuôi
+
+            MAX_LEN = 200
+            if len(safe_filename) + len(ext) > MAX_LEN:
+                safe_filename = safe_filename[-(MAX_LEN - len(ext)):]  # cắt từ cuối
 
             filename = f"{safe_filename}{ext}"  
             filepath = os.path.join(save_dir, filename)

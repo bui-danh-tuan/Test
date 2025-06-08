@@ -7,18 +7,18 @@ class UETSpider(scrapy.Spider):
     name = "uet_url"
     allowed_domains = ["uet.vnu.edu.vn"]
     db_path = "scrapy.db"
-    max_depth = 3  # Giới hạn độ sâu tối đa
+    max_depth = 5  # Giới hạn độ sâu tối đa
     base_depth = 0
 
     def __init__(self, *args, **kwargs):
         super(UETSpider, self).__init__(*args, **kwargs)
         self.create_db()
-        baseUrl = self.get_base_url()
-        if baseUrl[0] != None and len(baseUrl[0]) > 0:
-            self.start_urls = baseUrl[0]
-            self.base_depth = baseUrl[1]
-        else:
-            self.start_urls = ["https://uet.vnu.edu.vn/"]
+        # baseUrl = self.get_base_url()
+        # if baseUrl[0] != None and len(baseUrl[0]) > 0:
+        #     self.start_urls = baseUrl[0]
+        #     self.base_depth = baseUrl[1]
+        # else:
+        self.start_urls = ["https://uet.vnu.edu.vn/thong-bao-ve-viec-chuc-lop-hoc-bo-sung-kien-thuc-danh-cho-doi-tuong-du-tuyen-dao-tao-trinh-thac-si-nam-2025"]
 
     def get_base_url(self):
         conn = sqlite3.connect(self.db_path)
@@ -26,7 +26,7 @@ class UETSpider(scrapy.Spider):
         c.execute("""SELECT url, depth
             FROM uet_url
             WHERE crawled = 0
-            AND depth = (SELECT MIN(depth) FROM uet_url WHERE crawled = 0) LIMIT 1;""")
+            AND depth = (SELECT MIN(depth) FROM uet_url WHERE crawled = 0);""")
         result = c.fetchall()
         conn.close()
         if result != None and len(result) > 0:

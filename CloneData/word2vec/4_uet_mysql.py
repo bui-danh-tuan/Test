@@ -9,7 +9,7 @@ host = "localhost"
 database = "chatbot"
 
 # SQLite
-db_path = r"E:\Code\Master\BDT\Test\CloneData\uet_crawler\uet_crawler\spiders\scrapy.db"  # Đường dẫn đến file .db
+db_path = r"E:\Code\Master\BDT\Test\CloneData\uet_crawler\scrapy.db"  # Đường dẫn đến file .db
 
 # Mysql
 engine = create_engine(f"mysql+pymysql://{username}:{password}@{host}/{database}")

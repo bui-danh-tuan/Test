@@ -1,42 +1,4 @@
-import requests
-from bs4 import BeautifulSoup
-import urllib3
-from sqlalchemy import create_engine, text
+import torch
 
-# 1. Kết nối MySQL
-engine = create_engine("mysql+pymysql://root:root@localhost/chatbot")
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-sitemap_url = "https://uet.vnu.edu.vn/sitemap_index.xml"
-response = requests.get(sitemap_url, verify=False)
-soup = BeautifulSoup(response.content, 'xml')
-
-sitemaps = soup.find_all('sitemap')
-print(f"Tổng số sitemap con: {len(sitemaps)}")
-
-total_urls = 0
-new_urls = 0
-
-# 2. Hàm kiểm tra URL đã tồn tại chưa
-def url_exists(url):
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT 1 FROM uet_url WHERE url = :url LIMIT 1"), {"url": url})
-        return result.first() is not None
-
-for sitemap in sitemaps:
-    loc = sitemap.find('loc').text
-    res = requests.get(loc, verify=False)
-    sub_soup = BeautifulSoup(res.content, 'xml')
-    urls = sub_soup.find_all('url')
-    count_new = 0
-    for u in urls:
-        url = u.find('loc').text
-        total_urls += 1
-        if not url_exists(url):
-            new_urls += 1
-            count_new += 1
-    print(f"{loc}: {len(urls)} URL, trong đó {count_new} URL mới")
-
-print(f"Tổng số URL: {total_urls}")
-print(f"Tổng số URL chưa có trong uet_url: {new_urls}")
+print(torch.cuda.is_available())      # Phải ra True
+print(torch.cuda.get_device_name(0))  # NVIDIA GeForce RTX 4050 Laptop GPU
