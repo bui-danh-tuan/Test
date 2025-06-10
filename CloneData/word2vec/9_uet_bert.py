@@ -139,7 +139,7 @@ def call_deepseek(question: str, context: str) -> str:
 # 7) Hàm chính
 # ───────────────────────────────────────────────────────────────
 
-def answer_question(question: str, top_k: int = 5):
+def answer_question(question: str, top_k: int = 10):
     id_dict = search_ids(question, top_k=top_k)
     print("\nID tìm được:")
     for f in ("title", "subtitle", "content"):
@@ -159,6 +159,7 @@ def answer_question(question: str, top_k: int = 5):
     context = "\n\n".join(context_parts[:1000])  # giới hạn cực lớn
 
     print("\nĐang gọi DeepSeek…")
+    print(context)
     answer = call_deepseek(question, context)
     print("\n— Trả lời —\n", answer)
 

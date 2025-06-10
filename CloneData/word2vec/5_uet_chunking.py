@@ -15,8 +15,8 @@ nltk.download("punkt", quiet=True)
 nltk.download("punkt_tab", quiet=True)
 
 # --- PhoBERT --------------------------------------------------------------
-TOKENIZER_NAME = "vinai/phobert-base"
-MAX_SEQ_LEN    = 510  # 510 + [CLS] + [SEP] = 512
+TOKENIZER_NAME = "vinai/phobert-large"
+MAX_SEQ_LEN    = 250  # 510 + [CLS] + [SEP] = 256
 
 tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 device    = "cuda" if torch.cuda.is_available() else "cpu"
@@ -164,7 +164,7 @@ def split_coarse(html_text: str):
 sem_splitter = SemanticChunker(embeddings=embed_model)
 
 SENT_SPLIT_REGEX = r"(?<=[\.!?;–])\s+|\n+"
-CHAR_SPLITTER    = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=60)
+CHAR_SPLITTER    = RecursiveCharacterTextSplitter(chunk_size=250, chunk_overlap=25)
 
 def _truncate(sentence: str) -> str:
     ids = tokenizer(sentence)["input_ids"][:MAX_SEQ_LEN]
@@ -175,15 +175,34 @@ def safe_semantic_split(text: str):
     prepared  = " ".join(sentences)
     try:
         return sem_splitter.split_text(prepared)
-    except Exception:
+    except Exception as e:
         return CHAR_SPLITTER.split_text(prepared)
 
 # -------------------------------------------------------------------------
-# 3) CHIA LEAF ≤ 512 TOKEN
+# 3) CHIA LEAF ≤ 250 TOKEN
 # -------------------------------------------------------------------------
+def chunk_text(text: str, chunk_size: int = 250, overlap: int = 25):
+    """
+    Chia text thành các chunk có độ dài chunk_size token,
+    mỗi chunk chồng lắp overlap token với chunk trước.
+    """
+    # Mã hoá text thành danh sách token ids (không thêm special tokens)
+    token_ids = tokenizer.encode(text, add_special_tokens=False)
+    
+    chunks = []
+    step = chunk_size - overlap
+    for start in range(0, len(token_ids), step):
+        end = start + chunk_size
+        chunk_ids = token_ids[start:end]
+        # Giải mã lại thành chuỗi văn bản
+        chunk_text = tokenizer.decode(chunk_ids, clean_up_tokenization_spaces=True)
+        chunks.append(chunk_text)
+        if end >= len(token_ids):
+            break
+    return chunks
 
-def split_recursive(text: str, max_tok: int = 512, overlap: int = 60):
-    sents = nltk.sent_tokenize(text)
+def split_recursive_2(text: str, max_tok: int = 250, overlap: int = 25):
+    sents = [s.strip() for s in re.split(SENT_SPLIT_REGEX, text) if s.strip()]
     chunks, buf, buflen = [], [], 0
 
     for sent in sents:
@@ -200,6 +219,37 @@ def split_recursive(text: str, max_tok: int = 512, overlap: int = 60):
     if buf:
         chunks.append(" ".join(buf))
     return chunks
+
+def split_recursive(text: str, max_tok: int = 250, overlap: int = 25):
+    sents = nltk.sent_tokenize(text)
+    chunks, buf, buflen = [], [], 0
+
+    for sent in sents:
+        l = token_len(sent)
+        if buflen + l > max_tok:
+            chunks.append(" ".join(buf))
+            ov = []
+            while buf and token_len(" ".join(ov)) < overlap:
+                ov.insert(0, buf.pop())
+            buf, buflen = ov + [sent], token_len(" ".join(buf + [sent]))
+        else:
+            buf.append(sent)
+            buflen += l
+    if buf:
+        chunks.append(" ".join(buf))
+    chunks_2 = []
+    chunks_3 = []
+    for chunk in chunks:
+        if(token_len(chunk) > max_tok):
+            chunks_2.extend(split_recursive_2(chunk, max_tok, overlap))
+        else:
+            chunks_2.append(chunk)
+    for chunk in chunks_2:
+        if(token_len(chunk) > max_tok):
+            chunks_3.extend(chunk_text(chunk, max_tok, overlap))
+        else:
+            chunks_3.append(chunk)
+    return chunks_3
 
 # -------------------------------------------------------------------------
 # 4) DB
@@ -245,7 +295,6 @@ for id_content, html in rows:
                 for idx_leaf, leaf in enumerate(leaf_chunks, 1):
                     tokens_leaf = token_len(leaf)
                     preview = (leaf[:110] + "…") if len(leaf) > 113 else leaf
-
                     tx.execute(
                         SQL_INSERT,
                         {

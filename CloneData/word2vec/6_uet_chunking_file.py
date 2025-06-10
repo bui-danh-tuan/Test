@@ -1,217 +1,18 @@
-# =====================================================================
-# 0) KHỞI TẠO & HÀM CHUNG
-# =====================================================================
-import re, nltk, torch, os
+import re
+import openpyxl
+import pandas as pd
 from bs4 import BeautifulSoup
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Result
 from transformers import AutoTokenizer
-from langchain_experimental.text_splitter import SemanticChunker
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import pdfplumber
+from docx import Document
 
-# --- NLTK -----------------------------------------------------------------
-# Dùng cả punkt lẫn punkt_tab để tránh lỗi trên mọi bản NLTK
-nltk.download("punkt", quiet=True)
-nltk.download("punkt_tab", quiet=True)
-
-# --- PhoBERT --------------------------------------------------------------
-TOKENIZER_NAME = "vinai/phobert-base"
-MAX_SEQ_LEN    = 510  # 510 + [CLS] + [SEP] = 512
+TOKENIZER_NAME = "vinai/phobert-large"
+MAX_SEQ_LEN    = 250  # 510 + [CLS] + [SEP] = 256
 
 tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-device    = "cuda" if torch.cuda.is_available() else "cpu"
-
-embed_model = HuggingFaceEmbeddings(
-    model_name   = TOKENIZER_NAME,
-    model_kwargs = {"device": device},
-    encode_kwargs = {"normalize_embeddings": True},
-)
-
-def token_len(text: str) -> int:
-    return len(tokenizer(text)["input_ids"])
-
-# -------------------------------------------------------------------------
-# 1) TÁCH HEADING GIẢ ➜ MỤC LỚN
-# -------------------------------------------------------------------------
-RE_ROMAN = re.compile(r"^[IVXLCDM]+\.", re.I)
-RE_NUM   = re.compile(r"^\d+[.)]")
-
-def split_coarse(html_text: str):
-    HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
-
-    def is_heading(node) -> bool:
-        """True nếu node (hoặc con trực tiếp) được xem là heading."""
-        # Heading HTML thật
-        if node.name in HEADING_TAGS:
-            return True
-
-        # Node có chữ đậm?
-        bold_parts = node.find_all(["strong", "b"], recursive=False) or \
-                    node.find_all(["strong", "b"])
-        if not bold_parts:
-            return False
-
-        bold_text = " ".join(t.get_text(" ", strip=True) for t in bold_parts)
-        all_text  = node.get_text(" ", strip=True)
-        # ≥ 60 % văn bản ở dạng đậm → heading
-        return len(bold_text) / max(1, len(all_text)) >= 0.6
-
-
-    def table_to_text(tbl) -> str:
-        # 1) Lấy tiêu đề cột (headers)
-        headers = [th.get_text(" ", strip=True)
-                for th in tbl.select("thead tr th, thead tr td")]
-        body_rows = tbl.select("tbody tr")
-
-        if not headers:                           # bảng không có <thead>
-            first_tr, *rest = tbl.find_all("tr")
-            headers = [td.get_text(" ", strip=True)
-                    for td in first_tr.find_all(["td", "th"])]
-            body_rows = rest                      # bỏ hàng đầu vì đã lấy làm header
-
-        # 2) Gom mỗi hàng dữ liệu thành “header: value”
-        out_lines = []
-        for tr in body_rows:
-            cells = [td.get_text(" ", strip=True)
-                    for td in tr.find_all(["td", "th"])]
-
-            if not any(cells):                    # hàng rỗng → bỏ qua
-                continue
-
-            # ghép “<header>: <value>”
-            pairs = [f"{headers[i]} là {cells[i]}" 
-                    for i in range(min(len(headers), len(cells)))]
-            out_lines.append("\t".join(pairs))    # TAB phân tách cột
-
-        return ". ".join(out_lines)
-
-
-    def extract_text(node) -> str:
-        """Trích text của node, đồng thời gom bảng, danh sách, ảnh."""
-        out_chunks = []
-
-        if node.name == "table":
-            return table_to_text(node)
-
-        # 1) Bảng (mọi độ sâu) – lấy text rồi gỡ khỏi DOM
-        for tbl in node.select("table"):
-            out_chunks.append(table_to_text(tbl))
-            tbl.decompose()
-
-        # 2) Xử lý theo loại thẻ
-        if node.name in {"ul", "ol"}:
-            for li in node.find_all("li", recursive=False):
-                # li đậm ⇒ heading con; ngược lại bullet
-                if is_heading(li):
-                    out_chunks.append(li.get_text(" ", strip=True))
-                else:
-                    out_chunks.append("• " + li.get_text(" ", strip=True))
-
-        elif node.name == "img":
-            alt = node.get("alt", "").strip()
-            if alt:
-                out_chunks.append(f"[Hình: {alt}]")
-
-        else:  # p, div, span…
-            txt = node.get_text(" ", strip=True)
-            if txt:
-                out_chunks.append(txt)
-
-        return "\n".join(out_chunks)
-    """
-    Trả về:
-        main_title (str)  – tiêu đề bài viết
-        sections   (list) – [(heading, body_text), ...]
-    """
-    soup = BeautifulSoup(html_text, "html.parser")
-    root = soup.select_one("div.single-post-content-text.content-pad")
-    if not root:
-        return "", []
-
-    # Tiêu đề bài
-    h = (
-        soup.select_one("h2.single-content-title")  # ưu tiên h2 trong phần nội dung
-        or soup.h1                                  # tiếp theo là h1
-        or soup.title                               # cuối cùng: <title> trong <head>
-    )
-    main_title = h.get_text(" ", strip=True) if h else ""
-
-    sections, cur_head, cur_body = [], "", []
-
-    def flush():
-        """Đưa section hiện tại vào danh sách, không bỏ sót phần mở đầu."""
-        if not cur_body:                     # chẳng có nội dung → thôi
-            return
-        head = cur_head or main_title or "[Intro]"
-        sections.append((head, " ".join(cur_body).strip()))
-
-    for node in root.children:                      # CHỈ con trực tiếp
-        if not getattr(node, "name", None):         # node chỉ là '\n'
-            continue
-
-        if is_heading(node):                        # ─ heading mới ─
-            flush()
-            cur_head, cur_body = node.get_text(" ", strip=True), []
-        else:
-            txt = extract_text(node)
-            if txt:
-                cur_body.append(txt)
-    flush()
-    return main_title, sections
-# -------------------------------------------------------------------------
-# 2) SEMANTIC SPLIT (AN TOÀN)
-# -------------------------------------------------------------------------
-sem_splitter = SemanticChunker(embeddings=embed_model)
-
-SENT_SPLIT_REGEX = r"(?<=[\.!?;–])\s+|\n+"
-CHAR_SPLITTER    = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=60)
-
-def _truncate(sentence: str) -> str:
-    ids = tokenizer(sentence)["input_ids"][:MAX_SEQ_LEN]
-    return tokenizer.decode(ids, skip_special_tokens=True)
-
-def safe_semantic_split(text: str):
-    sentences = [_truncate(s) for s in re.split(SENT_SPLIT_REGEX, text) if s.strip()]
-    prepared  = " ".join(sentences)
-    try:
-        return sem_splitter.split_text(prepared)
-    except Exception:
-        return CHAR_SPLITTER.split_text(prepared)
-
-# -------------------------------------------------------------------------
-# 3) CHIA LEAF ≤ 512 TOKEN
-# -------------------------------------------------------------------------
-
-def split_recursive(text: str, max_tok: int = 512, overlap: int = 60):
-    sents = nltk.sent_tokenize(text)
-    chunks, buf, buflen = [], [], 0
-
-    for sent in sents:
-        l = token_len(sent)
-        if buflen + l > max_tok:
-            chunks.append(" ".join(buf))
-            ov = []
-            while buf and token_len(" ".join(ov)) < overlap:
-                ov.insert(0, buf.pop())
-            buf, buflen = ov + [sent], token_len(" ".join(buf + [sent]))
-        else:
-            buf.append(sent)
-            buflen += l
-    if buf:
-        chunks.append(" ".join(buf))
-    return chunks
-
-# -------------------------------------------------------------------------
-# 4) DB
-# -------------------------------------------------------------------------
 engine = create_engine("mysql+pymysql://root:root@localhost/chatbot", future=True)
-
-SQL_HTML = text("""
-    SELECT id, paragraph
-      FROM uet_content
-     WHERE chunking = 0 AND id_url = '10450'
-       AND paragraph LIKE '%<article class="single-post-content single-content">%';
-""")
 
 SQL_INSERT = text("""
     INSERT INTO uet_chunking (id_content, main_title, sub_title, content)
@@ -222,41 +23,293 @@ SQL_UPDATE = text("""
     UPDATE uet_content SET chunking = 1 WHERE id = :id_content;
 """)
 
-# -------------------------------------------------------------------------
-# 5) PIPELINE – COMMIT RIÊNG TỪNG URL
-# -------------------------------------------------------------------------
-with engine.connect() as conn:
-    rows = conn.execute(SQL_HTML).all()  # lấy trước vì conn sẽ tái sử dụng
+def excel():
+    def flatten_cols(col_tuple):
+        # gom các level của header vào một tên cột đơn
+        parts = []
+        for v in col_tuple:
+            if isinstance(v, str) and v.strip() and not v.lower().startswith("unnamed"):
+                # bỏ newline và trim
+                parts.append(v.replace("\n", " ").strip())
+        return re.sub(r"\s+", " ", " ".join(parts)).lower()
+    def excel_to_text(path):
+        wb = openpyxl.load_workbook(path, data_only=True)
 
-for id_content, html in rows:
-    with engine.begin() as tx:  # mỗi URL 1 transaction riêng, commit ngay khi ra khỏi block
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            max_col = ws.max_column
 
-        main_title, sections = split_coarse(html)
+            # --- 1) TÌM TITLE ROWS qua horizontal merges ---
+            merges = [m for m in ws.merged_cells.ranges if m.min_row == m.max_row]
+            row_to_width = {}
+            for m in merges:
+                w = m.max_col - m.min_col + 1
+                row_to_width.setdefault(m.min_row, []).append(w)
+            if row_to_width:
+                max_w = max(max(ws) for ws in row_to_width.values())
+                title_rows = [r for r, widths in row_to_width.items() if max(widths) == max_w]
+                title_parts = []
+                for r in title_rows:
+                    for m in merges:
+                        if m.min_row == r and (m.max_col - m.min_col + 1) == max_w:
+                            v = ws.cell(row=m.min_row, column=m.min_col).value
+                            if v: title_parts.append(str(v).strip())
+                title = " ".join(title_parts)
+            else:
+                title_rows = []
+                title = ""
+            print(f"\n=== Sheet: {sheet_name} ===")
+            print("Title:", title, "\n")
 
-        total_leaf = 0
-        for idx_sec, (sub_title, body) in enumerate(sections, 1):
+            # --- 2) TÌM HEADER_START: hàng đầu tiên sau title_rows có dữ liệu ---
+            start = max(title_rows) + 1 if title_rows else 1
+            header_start = None
+            for i in range(start, ws.max_row + 1):
+                rowvals = [ws.cell(row=i, column=c).value for c in range(1, max_col+1)]
+                if any(v not in (None, "") for v in rowvals):
+                    header_start = i
+                    break
+            if header_start is None:
+                continue
 
-            sem_chunks = safe_semantic_split(body)
+            # --- 3) TÌM HEADER_END qua vertical merges ---
+            header_end = header_start
+            for m in ws.merged_cells.ranges:
+                # nếu merge range “vắt qua” header_start
+                if m.min_row <= header_start < m.max_row:
+                    header_end = max(header_end, m.max_row)
 
-            for idx_par, sem_chunk in enumerate(sem_chunks, 1):
-                tokens_par = token_len(sem_chunk)
+            # --- 4) ĐỌC pandas với tất cả các hàng header ---
+            header_rows = list(range(header_start, header_end + 1))
+            header_idx  = [r - 1 for r in header_rows]  # pandas dùng 0-based
+            df = pd.read_excel(
+                path,
+                sheet_name=sheet_name,
+                header=header_idx,
+                dtype=str
+            )
+            df.columns = [flatten_cols(col) for col in df.columns]
 
-                leaf_chunks = split_recursive(sem_chunk)
-                for idx_leaf, leaf in enumerate(leaf_chunks, 1):
-                    tokens_leaf = token_len(leaf)
-                    preview = (leaf[:110] + "…") if len(leaf) > 113 else leaf
+            # --- 5) IN từng dòng data ---
+            data = []
+            for _, row in df.iterrows():
+                # dừng khi STT (cột đầu) trống
+                if pd.isna(row.iloc[0]):
+                    break
+                parts = []
+                for col, val in row.items():
+                    if pd.notna(val):
+                        parts.append(f"{col} {str(val).strip()}")
+                data.append(" ".join(parts))
+        return [title, data]
 
-                    tx.execute(
-                        SQL_INSERT,
-                        {
-                            "id_content": id_content,
-                            "main_title": main_title,
-                            "sub_title": sub_title,
-                            "content": leaf,
-                        },
-                    )
-                    total_leaf += 1
+    SQL_DATA = text("""
+        SELECT id, paragraph
+        FROM uet_content
+        WHERE type = 'file' and chunking = 0
+        AND (
+            LOWER(paragraph) LIKE '%.xlsx' 
+        );
+    """)
 
-        tx.execute(SQL_UPDATE, {"id_content": id_content})
-        tx.commit()
+    SQL_TITLE = text("""
+        SELECT paragraph FROM uet_content WHERE id_url = (SELECT id_parents from uet_url WHERE id = (SELECT id_url from uet_content WHERE id = :id));
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(SQL_DATA).all()
+    for id_content, html in rows:
+        sub_title, data = excel_to_text(html)
+        with engine.connect() as conn:
+            result: Result = conn.execute(SQL_TITLE, {"id": id_content})
+            row = result.mappings().first()
+            soup = BeautifulSoup(row.get("paragraph"), 'html.parser')
+            main_title = soup.title and soup.title.string or ""
+        with engine.begin() as tx:
+            for d in data:
+                tx.execute(
+                    SQL_INSERT,
+                    {
+                        "id_content": id_content,
+                        "main_title": main_title,
+                        "sub_title": sub_title,
+                        "content": d,
+                    },
+                )
+            tx.execute(SQL_UPDATE, {"id_content": id_content})
+            tx.commit()
+            print(id_content)
 
+def pdf():
+    def pdf_to_terminal(pdf_path):
+        def chunk_text(text: str, chunk_size: int = 250, overlap: int = 25):
+            """
+            Chia text thành các chunk có độ dài chunk_size token,
+            mỗi chunk chồng lắp overlap token với chunk trước.
+            """
+            # Mã hoá text thành danh sách token ids (không thêm special tokens)
+            token_ids = tokenizer.encode(text, add_special_tokens=False)
+            
+            chunks = []
+            step = chunk_size - overlap
+            for start in range(0, len(token_ids), step):
+                end = start + chunk_size
+                chunk_ids = token_ids[start:end]
+                # Giải mã lại thành chuỗi văn bản
+                chunk_text = tokenizer.decode(chunk_ids, clean_up_tokenization_spaces=True)
+                chunks.append(chunk_text)
+                if end >= len(token_ids):
+                    break
+            return chunks
+        
+        result = []
+        with pdfplumber.open(pdf_path) as pdf:
+            total_pages = len(pdf.pages)
+            if(total_pages > 10):
+                return []
+            for page_no, page in enumerate(pdf.pages, start=1):
+                # 1) Thử trích bảng
+                tables = page.extract_tables({
+                    "vertical_strategy": "lines",
+                    "horizontal_strategy": "lines"
+                })
+                
+                # 2) Kiểm tra xem có bảng hợp lệ không (ít nhất 2 cột header và ≥2 hàng)
+                has_table = False
+                if tables:
+                    tbl = tables[0]
+                    if len(tbl) > 1 and len(tbl[0]) > 1:
+                        has_table = True
+                
+                if has_table:
+                    # 3) Chuyển bảng thành DataFrame và in từng dòng flatten
+                    df = pd.DataFrame(tables[0][1:], columns=tables[0][0])
+                    for row in df.itertuples(index=False, name=None):
+                        parts = []
+                        for col_name, val in zip(df.columns, row):
+                            if val is not None and str(val).strip():
+                                parts.append(f"{col_name and col_name.lower() or ''} {str(val).strip()}")
+                        result.append(" ".join(parts))
+                else:
+                    # 4) Fallback: in nguyên văn trang đó
+                    text = page.extract_text()
+                    if text:
+                        result.extend(chunk_text(text.strip()))
+        result = [s for s in result if s.strip()]
+        return result
+
+    SQL_DATA = text("""
+        SELECT id, paragraph
+        FROM uet_content
+        WHERE type = 'file' and chunking = 0
+        AND (
+            LOWER(paragraph) LIKE '%.pdf' 
+        );
+    """)
+
+    SQL_TITLE = text("""
+        SELECT paragraph FROM uet_content WHERE id_url = (SELECT id_parents from uet_url WHERE id = (SELECT id_url from uet_content WHERE id = :id));
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(SQL_DATA).all()
+    for id_content, html in rows:
+        data = pdf_to_terminal(html)
+        with engine.connect() as conn:
+            result: Result = conn.execute(SQL_TITLE, {"id": id_content})
+            row = result.mappings().first()
+            soup = BeautifulSoup(row.get("paragraph"), 'html.parser')
+            main_title = soup.title and soup.title.string or ""
+        with engine.begin() as tx:
+            for d in data:
+                tx.execute(
+                    SQL_INSERT,
+                    {
+                        "id_content": id_content,
+                        "main_title": main_title,
+                        "sub_title": "",
+                        "content": d,
+                    },
+                )
+            tx.execute(SQL_UPDATE, {"id_content": id_content})
+            tx.commit()
+            print(id_content)
+
+def word():
+    def word_to_terminal(docx_path: str):
+        def chunk_text(text: str, chunk_size: int = 250, overlap: int = 24):
+            """
+            Chia text thành các chunk có độ dài chunk_size token,
+            mỗi chunk chồng lắp overlap token với chunk trước.
+            """
+            token_ids = tokenizer.encode(text, add_special_tokens=False)
+            chunks = []
+            step = chunk_size - overlap
+            for start in range(0, len(token_ids), step):
+                end = start + chunk_size
+                chunk_ids = token_ids[start:end]
+                chunks.append(tokenizer.decode(chunk_ids, clean_up_tokenization_spaces=True))
+                if end >= len(token_ids):
+                    break
+            return chunks
+        result = []
+        doc = Document(docx_path)
+
+        # 1) Nếu có bảng thì flatten từng dòng của tất cả các bảng
+        if doc.tables:
+            for table in doc.tables:
+                # Lấy toàn bộ rows dưới dạng list of lists
+                rows = [[cell.text for cell in row.cells] for row in table.rows]
+                # Kiểm tra tối thiểu phải có header ≥2 cột và ≥2 hàng
+                if len(rows) > 1 and len(rows[0]) > 1:
+                    df = pd.DataFrame(rows[1:], columns=rows[0])
+                    for row in df.itertuples(index=False, name=None):
+                        parts = []
+                        for col_name, val in zip(df.columns, row):
+                            if val is not None and str(val).strip():
+                                parts.append(f"{col_name.lower()} {str(val).strip()}")
+                        result.append(" ".join(parts))
+        else:
+            # 2) Nếu không có bảng, fallback: chunk toàn bộ văn bản
+            full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            if full_text:
+                result.extend(chunk_text(full_text.strip()))
+
+        # Loại bỏ dòng rỗng
+        return [s for s in result if s.strip()]
+
+    SQL_DATA = text("""
+        SELECT id, paragraph
+        FROM uet_content
+        WHERE type = 'file' and chunking = 0
+        AND (
+            LOWER(paragraph) LIKE '%.docx' 
+        );
+    """)
+
+    SQL_TITLE = text("""
+        SELECT paragraph FROM uet_content WHERE id_url = (SELECT id_parents from uet_url WHERE id = (SELECT id_url from uet_content WHERE id = :id));
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(SQL_DATA).all()
+    for id_content, html in rows:
+        data = word_to_terminal(html)
+        with engine.connect() as conn:
+            result: Result = conn.execute(SQL_TITLE, {"id": id_content})
+            row = result.mappings().first()
+            soup = BeautifulSoup(row.get("paragraph"), 'html.parser')
+            main_title = soup.title and soup.title.string or ""
+        with engine.begin() as tx:
+            for d in data:
+                tx.execute(
+                    SQL_INSERT,
+                    {
+                        "id_content": id_content,
+                        "main_title": main_title,
+                        "sub_title": "",
+                        "content": d,
+                    },
+                )
+            tx.execute(SQL_UPDATE, {"id_content": id_content})
+            tx.commit()
+            print(id_content)
+
+word()
